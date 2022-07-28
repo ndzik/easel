@@ -1,16 +1,21 @@
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TypeApplications #-}
+
 module GL where
 
 import Control.Concurrent (forkIO)
 import Control.Concurrent.Chan.Synchronous
+import Control.Exception hiding (Error)
 import Control.Monad (forever, void)
 import Foreign.Marshal.Array (withArray)
-import Foreign.Storable (sizeOf)
 import Foreign.Ptr (nullPtr, plusPtr)
+import Foreign.Storable (sizeOf)
 import Graphics.GLUtil (linkShaderProgram, loadShader, loadShaderBS)
 import Graphics.Rendering.OpenGL as GL hiding (Plane)
 import Graphics.UI.GLFW as GLFW
 import SWB
 import System.Exit (exitSuccess)
+import System.FilePath
 
 type Renderable = (VertexArrayObject, NumArrayIndices)
 
@@ -68,6 +73,12 @@ update (vao, sz) win = do
     GLFW.pollEvents
     update (vao, sz) win
 
+defaultVertexShaderName :: FilePath
+defaultVertexShaderName = "./shader.vert"
+
+defaultFragmentShaderName :: FilePath
+defaultFragmentShaderName = "./shader.frag"
+
 initResources :: RenderableObject a => a -> IO (VertexArrayObject, NumArrayIndices)
 initResources obj = do
   vao <- genObjectName
@@ -77,13 +88,15 @@ initResources obj = do
   withArray vs $ \ptr -> bufferData ArrayBuffer $= (sz, ptr, StaticDraw)
   vertexAttribPointer (AttribLocation 0) $= (ToFloat, VertexArrayDescriptor 4 Float 0 (plusPtr nullPtr 0))
   vertexAttribArray (AttribLocation 0) $= Enabled
-  vsp <-
-    loadShaderBS "vertex_shader" VertexShader defaultVertexShader
-  fsp <-
-    loadShaderBS "fragment_shader" FragmentShader defaultFragmentShader
+  vsp <- tryLoadFSShader defaultVertexShader defaultVertexShaderName VertexShader
+  fsp <- tryLoadFSShader defaultFragmentShader defaultFragmentShaderName FragmentShader
   prog <- linkShaderProgram [vsp, fsp]
   currentProgram $= Just prog
   return (vao, fromIntegral . length $ vs)
   where
     vs = toVBO obj
     sz = fromIntegral $ length vs * sizeOf (head vs)
+    tryLoadFSShader def fp st =
+      try @IOError (loadShader st fp) >>= \case
+        Left _ -> loadShaderBS (takeFileName fp) st def
+        Right r -> return r

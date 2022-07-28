@@ -79,16 +79,11 @@ data Bench = Bench
     _vsPath :: FilePath,
     _fsPath :: FilePath,
     _quitChan :: Chan (),
-    _updateChan :: Chan UpdateType
+    _updateChan :: Chan UpdateType,
+    _vao :: Maybe VertexArrayObject
   }
 
 makeLenses ''Bench
-
-defaultVertexShaderName :: FilePath
-defaultVertexShaderName = "./shader.vert"
-
-defaultFragmentShaderName :: FilePath
-defaultFragmentShaderName = "./shader.frag"
 
 data Updater r where
   UpdateFragmentShader :: Updater ()
@@ -199,6 +194,8 @@ runShaderUpdater = interpret $ \case
     logInfo "Trying to link new shader program..."
     prog <- liftIO $ linkShaderProgram [vs, fs]
     logInfo "Linking successful!"
+    vao <- gets _vao
+    liftIO $ bindVertexArrayObject $= vao
     liftIO $ currentProgram $= Just prog
     logInfo "New shader program loaded"
 
@@ -220,7 +217,8 @@ workbenchProgram ::
   Eff effs ()
 workbenchProgram = do
   logInfo "Setting up workbench"
-  (w, renderable) <- initContext @(Window, Renderable)
+  (w, renderable@(vao', _)) <- initContext @(Window, Renderable)
+  modify (vao ?~ vao')
   logInfo "Starting workbench"
   qc <- gets _quitChan
   uc <- gets _updateChan
@@ -290,6 +288,13 @@ shaderWatcher chan mgr = do
 executeBench :: IO ()
 executeBench = do
   withManager $ \mgr -> do
-    b <- Bench <$> createShader VertexShader <*> createShader FragmentShader <*> makeAbsolute defaultVertexShaderName <*> makeAbsolute defaultFragmentShaderName <*> newChan @() <*> newChan @UpdateType
+    b <-
+      Bench <$> createShader VertexShader
+        <*> createShader FragmentShader
+        <*> makeAbsolute defaultVertexShaderName
+        <*> makeAbsolute defaultFragmentShaderName
+        <*> newChan @()
+        <*> newChan @UpdateType
+        <*> return Nothing
     shaderWatcher (b ^. updateChan) mgr
     void $ runBench (Plane (0, 0) 1.8 1.8) b workbenchProgram
