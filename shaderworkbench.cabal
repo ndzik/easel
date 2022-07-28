@@ -30,9 +30,31 @@ executable shaderworkbench
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
     build-depends:    base ^>=4.14.3.0
+                    , shaderworkbench-lib
                     , bytestring
                     , OpenGL
                     , GLFW-b
                     , GLUtil
     hs-source-dirs:   app
     default-language: Haskell2010
+
+library shaderworkbench-lib
+  hs-source-dirs:   lib
+  default-language: Haskell2010
+  exposed-modules:  Bench
+                  , SWB
+                  , GL
+  build-depends:    base ^>=4.14.3.0
+                  , bytestring
+                  , OpenGL
+                  , GLFW-b
+                  , GLUtil
+                  , synchronous-channels
+                  , text
+                  , filepath
+                  , fsnotify
+                  , directory
+                  , extra
+                  , freer-simple
+                  , lens
+                  , co-log
