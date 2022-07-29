@@ -58,3 +58,4 @@ library shaderworkbench-lib
                   , freer-simple
                   , lens
                   , co-log
+                  , mtl
