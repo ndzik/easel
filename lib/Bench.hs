@@ -119,7 +119,7 @@ runInitializer ::
     RenderableObject o
   ) =>
   o ->
-  Eff (Initializer (Window, Renderable) : effs) a ->
+  Eff (Initializer (Window, Renderable, (Shader, Shader)) : effs) a ->
   Eff effs a
 runInitializer obj runEff = do
   chan <- gets _quitChan
@@ -133,8 +133,8 @@ runInitializer obj runEff = do
           GLFW.setWindowSizeCallback win (Just resizeWindow)
           GLFW.setKeyCallback win (Just $ keyPressed chan)
           GLFW.setWindowCloseCallback win (Just $ signalShutdown chan)
-          r <- initResources obj
-          return (win, r)
+          (r, ss) <- initResources obj
+          return (win, r, ss)
     )
     runEff
 
@@ -207,7 +207,7 @@ workbenchProgram ::
         State Bench,
         Listener,
         Renderer,
-        Initializer (Window, Renderable),
+        Initializer (Window, Renderable, (Shader, Shader)),
         Quitter Window,
         Updater,
         IO
@@ -217,7 +217,9 @@ workbenchProgram ::
   Eff effs ()
 workbenchProgram = do
   logInfo "Setting up workbench"
-  (w, renderable@(vao', _)) <- initContext @(Window, Renderable)
+  (w, renderable@(vao', _), (vs, fs)) <- initContext @(Window, Renderable, (Shader, Shader))
+  modify (vsProg .~ vs)
+  modify (fsProg .~ fs)
   modify (vao ?~ vao')
   logInfo "Starting workbench"
   qc <- gets _quitChan
@@ -244,7 +246,7 @@ runBench ::
       ShaderUpdater,
       Renderer,
       Listener,
-      Initializer (Window, Renderable),
+      Initializer (Window, Renderable, (Shader, Shader)),
       Quitter Window,
       State Bench,
       Logging,

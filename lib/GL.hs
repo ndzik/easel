@@ -79,7 +79,7 @@ defaultVertexShaderName = "./shader.vert"
 defaultFragmentShaderName :: FilePath
 defaultFragmentShaderName = "./shader.frag"
 
-initResources :: RenderableObject a => a -> IO (VertexArrayObject, NumArrayIndices)
+initResources :: RenderableObject a => a -> IO ((VertexArrayObject, NumArrayIndices), (Shader, Shader))
 initResources obj = do
   vao <- genObjectName
   bindVertexArrayObject $= Just vao
@@ -92,7 +92,7 @@ initResources obj = do
   fsp <- tryLoadFSShader defaultFragmentShader defaultFragmentShaderName FragmentShader
   prog <- linkShaderProgram [vsp, fsp]
   currentProgram $= Just prog
-  return (vao, fromIntegral . length $ vs)
+  return ((vao, fromIntegral . length $ vs), (vsp, fsp))
   where
     vs = toVBO obj
     sz = fromIntegral $ length vs * sizeOf (head vs)
