@@ -5,20 +5,32 @@ import Data.ByteString.Char8 hiding (unlines)
 defaultVertexShader :: ByteString
 defaultVertexShader =
   pack . unlines $
-    [ "#version 330 core",
-      "layout(location = 0) in vec3 vertexPosition_modelspace;",
+    [ "#version 410 core",
+      "",
+      "layout(location = 0) in vec4 vertexPosition_modelspace;",
+      "layout(location = 1) in vec2 iTexCoord;",
+      "",
+      "out vec2 texCoord;",
+      "",
       "void main() {",
-      " gl_Position.xyz = vertexPosition_modelspace;",
-      " gl_Position.w = 1.0;",
+      "gl_Position = vertexPosition_modelspace;",
+      "texCoord = vec2(iTexCoord.x, iTexCoord.y);",
       "}"
     ]
 
 defaultFragmentShader :: ByteString
 defaultFragmentShader =
   pack . unlines $
-    [ "#version 330 core",
+    [ "#version 410 core",
+      "",
+      "in vec2 texCoord;",
+      "",
+      "uniform sampler2D tex;",
+      "",
       "out vec3 color;",
+      "",
       "void main() {",
-      " color = vec3(1,0,0);",
+      "vec4 col = texture2D(tex, texCoord);",
+      "color = vec3(texCoord.x, 0.5, 0.5);",
       "}"
     ]
