@@ -23,6 +23,7 @@ import Control.Monad.Freer.TH
 import Control.Monad.IO.Class
 import Data.Either.Extra (mapLeft)
 import Data.Text (Text, pack)
+import Foreign.Ptr (nullPtr)
 import GL
 import Graphics.GLUtil (linkShaderProgram, loadShader)
 import Graphics.Rendering.OpenGL (Program, Shader, ShaderType (..), createShader)
@@ -75,13 +76,13 @@ runFilesystemShaderLoader = interpret $ \case
     liftIO $ mapLeft (ShaderError . pack . show) <$> try @IOError (loadShader FragmentShader fp)
 
 data Bench = Bench
-  { _vsProg :: Shader,
-    _fsProg :: Shader,
-    _vsPath :: FilePath,
-    _fsPath :: FilePath,
-    _quitChan :: Chan (),
-    _updateChan :: Chan UpdateType,
-    _vao :: Maybe VertexArrayObject
+  { _vsProg :: !Shader,
+    _fsProg :: !Shader,
+    _vsPath :: !FilePath,
+    _fsPath :: !FilePath,
+    _quitChan :: !(Chan ()),
+    _updateChan :: !(Chan UpdateType),
+    _vao :: !(Maybe VertexArrayObject)
   }
 
 makeLenses ''Bench
@@ -206,7 +207,7 @@ runRenderer = interpretM $ \case
     GL.clear [ColorBuffer]
 
     bindVertexArrayObject $= Just vao
-    drawArrays Triangles 0 sz
+    drawElements Triangles 6 UnsignedInt nullPtr
 
     GLFW.swapBuffers win
     GLFW.pollEvents
@@ -283,7 +284,7 @@ shaderWatcher chan mgr = do
       ( \case
           Added {} -> True
           Modified {} -> True
-          _ -> False
+          _else -> False
       )
       ( \case
           Added fp _ _
@@ -292,7 +293,7 @@ shaderWatcher chan mgr = do
           Modified fp _ _
             | takeFileName fp == takeFileName defaultVertexShaderName -> writeChan chan VertexUpdate
             | takeFileName fp == takeFileName defaultFragmentShaderName -> writeChan chan FragmentUpdate
-          _ -> return ()
+          _else -> return ()
       )
 
 executeBench :: IO ()

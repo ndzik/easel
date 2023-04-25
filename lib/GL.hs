@@ -21,29 +21,39 @@ type Renderable = (VertexArrayObject, NumArrayIndices)
 
 type Point = (Float, Float)
 
-data Plane = Plane Point Float Float
+data Plane = Plane !Point !Float !Float
 
-data DefTriangle = DefTriangle Point Point Point
+data DefTriangle = DefTriangle !Point !Point !Point
 
 class RenderableObject a where
-  toVBO :: a -> [Vertex4 Float]
+  toVBO :: a -> [(Vertex4 Float, Vertex2 Float)]
+  toEBO :: a -> [GLuint]
 
 instance RenderableObject Plane where
-  toVBO (Plane (x, y) w h) = [p0, p1, p3, p3, p1, p2]
+  toVBO (Plane (x, y) w h) = [(p0, p0_tex), (p1, p1_tex), (p2, p2_tex), (p3, p3_tex)]
     where
       rw = w / 2
       rh = h / 2
       p0 = Vertex4 (x - rw) (y - rh) 0 1
+      p0_tex = Vertex2 0 0
       p1 = Vertex4 (x + rw) (y - rh) 0 1
+      p1_tex = Vertex2 1 0
       p2 = Vertex4 (x + rw) (y + rh) 0 1
+      p2_tex = Vertex2 1 1
       p3 = Vertex4 (x - rw) (y + rh) 0 1
+      p3_tex = Vertex2 0 1
+  toEBO Plane {} = [0, 1, 2, 0, 2, 3]
 
 instance RenderableObject DefTriangle where
-  toVBO (DefTriangle (xp0, yp0) (xp1, yp1) (xp2, yp2)) = [p0, p1, p2]
+  toVBO (DefTriangle (xp0, yp0) (xp1, yp1) (xp2, yp2)) = [(p0, p0_tex), (p1, p1_tex), (p2, p2_tex)]
     where
       p0 = Vertex4 xp0 yp0 0 1
+      p0_tex = Vertex2 0 0
       p1 = Vertex4 xp1 yp1 0 1
+      p1_tex = Vertex2 0.5 1
       p2 = Vertex4 xp2 yp2 0 1
+      p2_tex = Vertex2 1 0
+  toEBO DefTriangle {} = [0, 1, 2]
 
 keyPressed :: Chan () -> GLFW.KeyCallback
 keyPressed chan win GLFW.Key'Escape _ GLFW.KeyState'Pressed _ = signalShutdown chan win
@@ -66,7 +76,7 @@ update (vao, sz) win = do
   GL.clear [ColorBuffer]
 
   bindVertexArrayObject $= Just vao
-  drawArrays Triangles 0 sz
+  drawElements Triangles 3 UnsignedInt nullPtr
 
   GLFW.swapBuffers win
   forever $ do
@@ -85,17 +95,33 @@ initResources obj = do
   bindVertexArrayObject $= Just vao
   vbo <- genObjectName
   bindBuffer ArrayBuffer $= Just vbo
-  withArray vs $ \ptr -> bufferData ArrayBuffer $= (sz, ptr, StaticDraw)
-  vertexAttribPointer (AttribLocation 0) $= (ToFloat, VertexArrayDescriptor 4 Float 0 (plusPtr nullPtr 0))
-  vertexAttribArray (AttribLocation 0) $= Enabled
+  veo <- genObjectName
+  let vertexAttributeLocation = AttribLocation 0
+      texAttributeLocation = AttribLocation 1
+  -- VAO definition.
+  withArray vs $ \ptr -> bufferData ArrayBuffer $= (vssz, ptr, StaticDraw)
+  vertexAttribPointer vertexAttributeLocation $= (ToFloat, VertexArrayDescriptor 4 Float stride (plusPtr nullPtr 0))
+  vertexAttribArray vertexAttributeLocation $= Enabled
+  -- EBO definition.
+  bindBuffer ElementArrayBuffer $= Just veo
+  vertexAttribPointer texAttributeLocation $= (ToFloat, VertexArrayDescriptor 2 Float stride (plusPtr nullPtr (4 * floatSize)))
+  vertexAttribArray texAttributeLocation $= Enabled
+  withArray es $ \ptr -> bufferData ElementArrayBuffer $= (essz, ptr, StaticDraw)
   vsp <- tryLoadFSShader defaultVertexShader defaultVertexShaderName VertexShader
   fsp <- tryLoadFSShader defaultFragmentShader defaultFragmentShaderName FragmentShader
   prog <- linkShaderProgram [vsp, fsp]
   currentProgram $= Just prog
   return ((vao, fromIntegral . length $ vs), (vsp, fsp))
   where
-    vs = toVBO obj
-    sz = fromIntegral $ length vs * sizeOf (head vs)
+    floatSize = sizeOf (0 :: Float)
+    stride = fromIntegral $ 6 * floatSize
+    flatten :: [Float] -> [(Vertex4 Float, Vertex2 Float)] -> [Float]
+    flatten rs [] = reverse rs
+    flatten rs ((Vertex4 x1 y1 z1 w1, Vertex2 x2 y2) : xs) = flatten (y2 : x2 : w1 : z1 : y1 : x1 : rs) xs
+    vs = flatten [] . toVBO $ obj
+    es = toEBO obj
+    vssz = fromIntegral $ length vs * sizeOf (head vs)
+    essz = fromIntegral $ length es * sizeOf (head es)
     tryLoadFSShader def fp st =
       try @IOError (loadShader st fp) >>= \case
         Left _ -> loadShaderBS (takeFileName fp) st def
