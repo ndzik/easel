@@ -44,6 +44,7 @@ library shaderworkbench-lib
   exposed-modules:  Bench
                   , SWB
                   , GL
+                  , BenchProgram
   build-depends:    base ^>=4.14.3.0
                   , bytestring
                   , OpenGL

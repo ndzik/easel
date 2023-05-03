@@ -3,14 +3,16 @@
 
 module GL where
 
+import BenchProgram
 import Control.Concurrent (forkIO)
 import Control.Concurrent.Chan.Synchronous
 import Control.Exception hiding (Error)
+import Control.Lens
 import Control.Monad (forever, void)
 import Foreign.Marshal.Array (withArray)
 import Foreign.Ptr (nullPtr, plusPtr)
 import Foreign.Storable (sizeOf)
-import Graphics.GLUtil (linkShaderProgram, loadShader, loadShaderBS)
+import Graphics.GLUtil (linkShaderProgram, loadShader, loadShaderBS, throwError)
 import Graphics.Rendering.OpenGL as GL hiding (Plane)
 import Graphics.UI.GLFW as GLFW
 import SWB
@@ -70,18 +72,27 @@ resizeWindow win w h = do
   GL.loadIdentity
   GL.ortho2D 0 (realToFrac w) (realToFrac h) 0
 
-update :: (VertexArrayObject, NumArrayIndices) -> GLFW.Window -> IO ()
-update (vao, sz) win = do
+update :: BenchProgram -> GLFW.Window -> IO ()
+update bp win = do
+  let vao = bp ^. vAO
+  passCurrentTime bp
   GL.clearColor $= Color4 0 0 0 1
   GL.clear [ColorBuffer]
 
   bindVertexArrayObject $= Just vao
-  drawElements Triangles 3 UnsignedInt nullPtr
+  drawElements Triangles 6 UnsignedInt nullPtr
 
   GLFW.swapBuffers win
-  forever $ do
-    GLFW.pollEvents
-    update (vao, sz) win
+  GLFW.pollEvents
+
+passCurrentTime :: BenchProgram -> IO ()
+passCurrentTime bp = do
+  let dtUniform = bp ^. deltaTimeUniform
+  currentTime <-
+    GLFW.getTime >>= \case
+      Nothing -> error "Failed to get time."
+      Just t -> return t
+  uniform dtUniform $= currentTime
 
 defaultVertexShaderName :: FilePath
 defaultVertexShaderName = "./shader.vert"
@@ -89,7 +100,7 @@ defaultVertexShaderName = "./shader.vert"
 defaultFragmentShaderName :: FilePath
 defaultFragmentShaderName = "./shader.frag"
 
-initResources :: RenderableObject a => a -> IO ((VertexArrayObject, NumArrayIndices), (Shader, Shader))
+initResources :: RenderableObject a => a -> IO BenchProgram
 initResources obj = do
   vao <- genObjectName
   bindVertexArrayObject $= Just vao
@@ -111,7 +122,17 @@ initResources obj = do
   fsp <- tryLoadFSShader defaultFragmentShader defaultFragmentShaderName FragmentShader
   prog <- linkShaderProgram [vsp, fsp]
   currentProgram $= Just prog
-  return ((vao, fromIntegral . length $ vs), (vsp, fsp))
+  dtUniform <- uniformLocation prog "dt"
+  return $
+    BenchProgram
+      { _benchProgramVertexProgram = vsp,
+        _benchProgramFragmentProgram = fsp,
+        _benchProgramProgram = prog,
+        _benchProgramVAO = vao,
+        _benchProgramVEO = veo,
+        _benchProgramLen = fromIntegral . length $ vs,
+        _benchProgramDeltaTimeUniform = dtUniform
+      }
   where
     floatSize = sizeOf (0 :: Float)
     stride = fromIntegral $ 6 * floatSize

@@ -10,6 +10,7 @@
 
 module Bench (executeBench) where
 
+import BenchProgram
 import Colog (Severity (..), cmap, fmtMessage, log, logTextStdout, usingLoggerT, withLog)
 import Control.Concurrent.Chan.Synchronous
 import Control.Exception hiding (Error)
@@ -76,8 +77,9 @@ runFilesystemShaderLoader = interpret $ \case
     liftIO $ mapLeft (ShaderError . pack . show) <$> try @IOError (loadShader FragmentShader fp)
 
 data Bench = Bench
-  { _vsProg :: !Shader,
-    _fsProg :: !Shader,
+  { _benchProgram :: !BenchProgram,
+    _defaultVsp :: !Shader,
+    _defaultFsp :: !Shader,
     _vsPath :: !FilePath,
     _fsPath :: !FilePath,
     _quitChan :: !(Chan ()),
@@ -106,14 +108,17 @@ runUpdater =
         ) =>
         Eff effs ()
       updateShaders = do
-        vs <- gets _vsProg
-        fs <- gets _fsProg
+        vs <- gets (^. benchProgram . vertexProgram)
+        fs <- gets (^. benchProgram . fragmentProgram)
         logInfo "Trying to link new shader program..."
         prog <- liftIO $ linkShaderProgram [vs, fs]
+        modify (set (benchProgram . program) prog)
         logInfo "Linking successful!"
         vao <- gets _vao
         liftIO $ bindVertexArrayObject $= vao
         liftIO $ currentProgram $= Just prog
+        dtUniform <- liftIO $ uniformLocation prog "dt"
+        modify (set (benchProgram . deltaTimeUniform) dtUniform)
         logInfo "New shader program loaded"
    in interpret $
         \case
@@ -122,14 +127,14 @@ runUpdater =
               Left err -> logError . pack . show $ err
               Right s -> do
                 logInfo "FragmentShader compilation successful"
-                modify (set fsProg s)
+                modify (set (benchProgram . fragmentProgram) s)
                 updateShaders
           UpdateVertexShader ->
             gets _vsPath >>= loadVertexShader >>= \case
               Left err -> logError . pack . show $ err
               Right s -> do
                 logInfo "VertexShader compilation successful"
-                modify (set vsProg s)
+                modify (set (benchProgram . vertexProgram) s)
                 updateShaders
 
 data Initializer w r where
@@ -143,7 +148,7 @@ runInitializer ::
     RenderableObject o
   ) =>
   o ->
-  Eff (Initializer (Window, Renderable) : effs) a ->
+  Eff (Initializer (Window, BenchProgram) : effs) a ->
   Eff effs a
 runInitializer obj runEff = do
   chan <- gets _quitChan
@@ -161,11 +166,10 @@ runInitializer obj runEff = do
           liftIO $ GLFW.setWindowSizeCallback win (Just resizeWindow)
           liftIO $ GLFW.setKeyCallback win (Just $ keyPressed chan)
           liftIO $ GLFW.setWindowCloseCallback win (Just $ signalShutdown chan)
-          (r@(vao', _), (vs, fs)) <- liftIO $ initResources obj
-          modify (vsProg .~ vs)
-          modify (fsProg .~ fs)
-          modify (vao ?~ vao')
-          return (win, r)
+          liftIO $ GLFW.setTime 0
+          bp <- liftIO $ initResources obj
+          modify (benchProgram .~ bp)
+          return (win, bp)
     )
     runEff
 
@@ -191,7 +195,7 @@ runListener = interpretM $ \case
   Listen c -> maybeTry (tryReadChan c)
 
 data Renderer r where
-  RenderIt :: Window -> Renderable -> Renderer ()
+  RenderIt :: Window -> BenchProgram -> Renderer ()
 
 makeEffect ''Renderer
 
@@ -202,15 +206,7 @@ runRenderer ::
   Eff (Renderer : effs) a ->
   Eff effs a
 runRenderer = interpretM $ \case
-  RenderIt win (vao, sz) -> do
-    GL.clearColor $= Color4 0 0 0 1
-    GL.clear [ColorBuffer]
-
-    bindVertexArrayObject $= Just vao
-    drawElements Triangles 6 UnsignedInt nullPtr
-
-    GLFW.swapBuffers win
-    GLFW.pollEvents
+  RenderIt win bp -> update bp win
 
 type WorkBenchEffects ls iv q =
   [ ShaderLoader ls,
@@ -225,13 +221,13 @@ type WorkBenchEffects ls iv q =
 
 workbenchProgram ::
   ( Members
-      (WorkBenchEffects FilePath (Window, Renderable) Window)
+      (WorkBenchEffects FilePath (Window, BenchProgram) Window)
       effs
   ) =>
   Eff effs ()
 workbenchProgram = do
   logInfo "Setting up workbench"
-  (w, renderable@(vao', _)) <- initContext @(Window, Renderable)
+  (w, bp) <- initContext @(Window, BenchProgram)
   logInfo "Starting workbench"
   qc <- gets _quitChan
   uc <- gets _updateChan
@@ -239,10 +235,12 @@ workbenchProgram = do
         listen qc >>= \case
           Just _ -> return ()
           Nothing ->
-            listen uc >>= \case
-              Just VertexUpdate -> updateVertexShader >> renderIt w renderable >> renderUntilDone
-              Just FragmentUpdate -> updateFragmentShader >> renderIt w renderable >> renderUntilDone
-              Nothing -> renderIt w renderable >> renderUntilDone
+            listen uc >>= \upd -> do
+              bp <- gets _benchProgram
+              case upd of
+                Just VertexUpdate -> updateVertexShader >> renderIt w bp >> renderUntilDone
+                Just FragmentUpdate -> updateFragmentShader >> renderIt w bp >> renderUntilDone
+                Nothing -> renderIt w bp >> renderUntilDone
   renderUntilDone
   logInfo "Quitting workbench"
   quitIt w
@@ -256,7 +254,7 @@ runBench ::
       ShaderLoader FilePath,
       Renderer,
       Listener,
-      Initializer (Window, Renderable),
+      Initializer (Window, BenchProgram),
       Quitter Window,
       State Bench,
       Logging,
@@ -300,7 +298,7 @@ executeBench :: IO ()
 executeBench = do
   withManager $ \mgr -> do
     b <-
-      Bench <$> createShader VertexShader
+      Bench (BenchProgram {}) <$> createShader VertexShader
         <*> createShader FragmentShader
         <*> makeAbsolute defaultVertexShaderName
         <*> makeAbsolute defaultFragmentShaderName
