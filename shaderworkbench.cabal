@@ -29,7 +29,7 @@ executable shaderworkbench
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
-    build-depends:    base ^>=4.14.3.0
+    build-depends:    base ^>=4.17
                     , shaderworkbench-lib
                     , bytestring
                     , OpenGL
@@ -45,7 +45,7 @@ library shaderworkbench-lib
                   , SWB
                   , GL
                   , BenchProgram
-  build-depends:    base ^>=4.14.3.0
+  build-depends:    base ^>=4.17
                   , bytestring
                   , OpenGL
                   , GLFW-b
@@ -57,6 +57,7 @@ library shaderworkbench-lib
                   , directory
                   , extra
                   , freer-simple
+                  , template-haskell
                   , lens
                   , co-log
                   , mtl
