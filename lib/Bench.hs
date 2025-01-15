@@ -78,8 +78,6 @@ runFilesystemShaderLoader = interpret $ \case
 
 data Bench = Bench
   { _benchProgram :: !BenchProgram,
-    _defaultVsp :: !Shader,
-    _defaultFsp :: !Shader,
     _vsPath :: !FilePath,
     _fsPath :: !FilePath,
     _quitChan :: !(Chan ()),
@@ -157,6 +155,10 @@ runInitializer obj runEff = do
         InitContext -> do
           liftIO GLFW.init
           liftIO GLFW.defaultWindowHints
+          liftIO $ GLFW.windowHint (WindowHint'ContextVersionMajor 4)
+          liftIO $ GLFW.windowHint (WindowHint'ContextVersionMinor 1)
+          liftIO $ GLFW.windowHint (WindowHint'OpenGLProfile OpenGLProfile'Core)
+          liftIO $ GLFW.windowHint (WindowHint'OpenGLForwardCompat True)
           win <-
             liftIO $
               GLFW.createWindow 512 512 "WorkBench" Nothing Nothing >>= \case
@@ -298,9 +300,8 @@ executeBench :: IO ()
 executeBench = do
   withManager $ \mgr -> do
     b <-
-      Bench (BenchProgram {}) <$> createShader VertexShader
-        <*> createShader FragmentShader
-        <*> makeAbsolute defaultVertexShaderName
+      Bench (BenchProgram {})
+        <$> makeAbsolute defaultVertexShaderName
         <*> makeAbsolute defaultFragmentShaderName
         <*> newChan @()
         <*> newChan @UpdateType

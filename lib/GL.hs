@@ -100,7 +100,7 @@ defaultVertexShaderName = "./shader.vert"
 defaultFragmentShaderName :: FilePath
 defaultFragmentShaderName = "./shader.frag"
 
-initResources :: RenderableObject a => a -> IO BenchProgram
+initResources :: (RenderableObject a) => a -> IO BenchProgram
 initResources obj = do
   vao <- genObjectName
   bindVertexArrayObject $= Just vao
