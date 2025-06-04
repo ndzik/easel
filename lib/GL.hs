@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
 module GL where
@@ -92,7 +93,8 @@ passCurrentTime bp = do
     GLFW.getTime >>= \case
       Nothing -> error "Failed to get time."
       Just t -> return t
-  uniform dtUniform $= currentTime
+  let dtFloat :: GLfloat = realToFrac currentTime
+  uniform dtUniform $= dtFloat
 
 defaultVertexShaderName :: FilePath
 defaultVertexShaderName = "./shader.vert"
